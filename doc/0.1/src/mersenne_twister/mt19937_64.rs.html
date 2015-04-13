@@ -770,6 +770,19 @@
 <span id="728">728</span>
 <span id="729">729</span>
 <span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
 </pre><pre class='rust '>
 <span class='comment'>// src/mt19937_64.rs</span>
 <span class='comment'>//</span>
@@ -790,7 +803,7 @@
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>cmp</span>::<span class='ident'>max</span>;
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>default</span>::<span class='ident'>Default</span>;
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>mem</span>;
-<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>num</span>::<span class='ident'>wrapping</span>::<span class='ident'>Wrapping</span>;
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>num</span>::<span class='ident'>Wrapping</span>;
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>rand</span>::{<span class='ident'>Rng</span>, <span class='ident'>SeedableRng</span>};
 
 <span class='kw'>const</span> <span class='ident'>NN</span>: <span class='ident'>usize</span> <span class='op'>=</span> <span class='number'>312</span>;
@@ -806,6 +819,19 @@
 <span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>MT19937_64</span> {
     <span class='ident'>idx</span>: <span class='ident'>usize</span>,
     <span class='ident'>state</span>: [<span class='ident'>Wrapping</span><span class='op'>&lt;</span><span class='ident'>u64</span><span class='op'>&gt;</span>; <span class='ident'>NN</span>],
+}
+
+<span class='comment'>// FIXME: This manual implementation will probably become unnecessary someday.</span>
+<span class='kw'>impl</span> <span class='ident'>Clone</span> <span class='kw'>for</span> <span class='ident'>MT19937_64</span> {
+    <span class='attribute'>#[<span class='ident'>inline</span>]</span>
+    <span class='kw'>fn</span> <span class='ident'>clone</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='ident'>MT19937_64</span> {
+        <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>ptr</span>;
+        <span class='kw'>unsafe</span> {
+            <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>mt</span> <span class='op'>=</span> <span class='ident'>mem</span>::<span class='ident'>uninitialized</span>();
+            <span class='ident'>ptr</span>::<span class='ident'>copy_nonoverlapping</span>(<span class='self'>self</span>, <span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='ident'>mt</span>, <span class='number'>1</span>);
+            <span class='ident'>mt</span>
+        }
+    }
 }
 
 <span class='kw'>impl</span> <span class='ident'>SeedableRng</span><span class='op'>&lt;</span><span class='ident'>u64</span><span class='op'>&gt;</span> <span class='kw'>for</span> <span class='ident'>MT19937_64</span> {
