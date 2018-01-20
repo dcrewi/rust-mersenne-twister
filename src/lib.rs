@@ -22,6 +22,15 @@
 //!
 //! ## Usage
 //!
+//! This crate is [on crates.io](https://crates.io/crates/mersenne_twister) 
+//! and can be used by adding `mersenne_twister` to the dependencies in your
+//! project's `Cargo.toml`.
+//!
+//! ```
+//! [dependencies]
+//! mersenne_twister = "1.1.1"
+//! ```
+//!
 //! If your application does not require a specific Mersenne Twister
 //! flavor (32-bit or 64-bit), you can use the default flavor for your
 //! target platform by using the `MersenneTwister` type
