@@ -26,7 +26,7 @@
 //! and can be used by adding `mersenne_twister` to the dependencies in your
 //! project's `Cargo.toml`.
 //!
-//! ```
+//! ```toml
 //! [dependencies]
 //! mersenne_twister = "1.1.1"
 //! ```
