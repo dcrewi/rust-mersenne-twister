@@ -13,8 +13,11 @@ use std::default::Default;
 use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 use std::num::Wrapping;
+use std::slice;
 
-use rand::{Rng, SeedableRng, Rand};
+use rand_core::{RngCore, SeedableRng, impls, le, Error};
+
+#[cfg(test)] use rand::{thread_rng, Rng};
 
 const NN: usize = 312;
 const MM: usize = 156;
@@ -26,71 +29,36 @@ const LM: Wrapping<u64> =  Wrapping(        0x7FFFFFFF); // Least significant 31
 /// The 64-bit flavor of the Mersenne Twister pseudorandom number
 /// generator.
 #[allow(non_camel_case_types)]
-#[derive(Copy)]
+#[derive(Clone)]
 pub struct MT19937_64 {
     idx: usize,
     state: [Wrapping<u64>; NN],
 }
 
-const UNINITIALIZED: MT19937_64 = MT19937_64 {
-    idx: 0,
-    state: [Wrapping(0); NN]
-};
+impl SeedableRng for MT19937_64 {
+    type Seed = [u8; 32];
 
-impl SeedableRng<u64> for MT19937_64 {
-    #[inline]
-    fn from_seed(seed: u64) -> MT19937_64 {
-        let mut mt = UNINITIALIZED;
-        mt.reseed(seed);
-        mt
+    fn from_seed(seed: Self::Seed) -> Self {
+        let mut seed_u64 = [0u64; NN];
+        le::read_u64_into(&seed, &mut seed_u64);
+        MT19937_64::from_seed_slice(&seed_u64)
     }
 
-    fn reseed(&mut self, seed: u64) {
-        self.idx = NN;
-        self.state[0] = Wrapping(seed);
-        for i in 1..NN {
-            self.state[i] = Wrapping(6364136223846793005) * (self.state[i-1] ^ (self.state[i-1] >> 62)) + Wrapping(i as u64);
+    fn from_rng<R: RngCore>(mut rng: R) -> Result<Self, Error> {
+        // Custom `from_rng` implementation that uses a seed with the same size
+        // as the entire state.
+        let mut seed = [0u64; NN];
+        unsafe {
+            let ptr = seed.as_mut_ptr() as *mut u8;
+
+            let slice = slice::from_raw_parts_mut(ptr, NN * 4);
+            rng.try_fill_bytes(slice)?;
         }
+        Ok(MT19937_64::from_seed_slice(&seed))
     }
 }
 
-impl<'a> SeedableRng<&'a [u64]> for MT19937_64 {
-    #[inline]
-    fn from_seed(seed: &[u64]) -> MT19937_64 {
-        let mut mt = UNINITIALIZED;
-        mt.reseed(seed);
-        mt
-    }
-
-    fn reseed(&mut self, key: &[u64]) {
-        self.reseed(19650218u64);
-        let mut i = 1;
-        let mut j = 0;
-        for _ in 0 .. max(NN, key.len()) {
-            self.state[i] = (self.state[i] ^ ((self.state[i-1] ^ (self.state[i-1]>>62)) * Wrapping(3935559000370003845))) + Wrapping(key[j]) + Wrapping(j as u64);
-            i += 1;
-            if i >= NN {
-                self.state[0] = self.state[NN-1];
-                i = 1;
-            }
-            j += 1;
-            if j >= key.len() {
-                j = 0;
-            }
-        }
-        for _ in 0 .. NN-1 {
-            self.state[i] = (self.state[i] ^ ((self.state[i-1] ^ (self.state[i-1]>>62)) * Wrapping(2862933555777941757))) - Wrapping(i as u64);
-            i += 1;
-            if i >= NN {
-                self.state[0] = self.state[NN-1];
-                i = 1;
-            }
-        }
-        self.state[0] = Wrapping(1 << 63);
-    }
-}
-
-impl Rng for MT19937_64 {
+impl RngCore for MT19937_64 {
     #[inline]
     fn next_u32(&mut self) -> u32 {
         self.next_u64() as u32
@@ -108,6 +76,15 @@ impl Rng for MT19937_64 {
         self.idx += 1;
         temper(x)
     }
+
+    #[inline]
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        impls::fill_bytes_via_next(self, dest)
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+        Ok(self.fill_bytes(dest))
+    }
 }
 
 impl MT19937_64 {
@@ -115,7 +92,51 @@ impl MT19937_64 {
     /// the default fixed seed.
     #[inline]
     pub fn new_unseeded() -> MT19937_64 {
-        SeedableRng::from_seed(5489u64)
+        MT19937_64::from_seed_u64(5489u64)
+    }
+
+    /// Initialize a new Mersenne Twister random number generator using an `u64`
+    /// as seed.
+    pub fn from_seed_u64(seed: u64) -> MT19937_64 {
+        let mut mt = MT19937_64 {
+            idx: NN,
+            state: [Wrapping(0); NN]
+        };
+        mt.state[0] = Wrapping(seed);
+        for i in 1..NN {
+            mt.state[i] = Wrapping(6364136223846793005) * (mt.state[i-1] ^ (mt.state[i-1] >> 62)) + Wrapping(i as u64);
+        }
+        mt
+    }
+
+    /// Initialize a new Mersenne Twister random number generator using a slice
+    /// of `u64` values.
+    pub fn from_seed_slice(seed: &[u64]) -> MT19937_64 {
+        let mut mt = MT19937_64::from_seed_u64(19650218u64);
+        let mut i = 1;
+        let mut j = 0;
+        for _ in 0 .. max(NN, seed.len()) {
+            mt.state[i] = (mt.state[i] ^ ((mt.state[i-1] ^ (mt.state[i-1]>>62)) * Wrapping(3935559000370003845))) + Wrapping(seed[j]) + Wrapping(j as u64);
+            i += 1;
+            if i >= NN {
+                mt.state[0] = mt.state[NN-1];
+                i = 1;
+            }
+            j += 1;
+            if j >= seed.len() {
+                j = 0;
+            }
+        }
+        for _ in 0 .. NN-1 {
+            mt.state[i] = (mt.state[i] ^ ((mt.state[i-1] ^ (mt.state[i-1]>>62)) * Wrapping(2862933555777941757))) - Wrapping(i as u64);
+            i += 1;
+            if i >= NN {
+                mt.state[0] = mt.state[NN-1];
+                i = 1;
+            }
+        }
+        mt.state[0] = Wrapping(1 << 63);
+        mt
     }
 
     fn fill_next_state(&mut self) {
@@ -141,11 +162,13 @@ impl MT19937_64 {
     /// Panics if the length of the slice is not exactly 312.
     pub fn recover(samples: &[u64]) -> MT19937_64 {
         assert!(samples.len() == NN);
-        let mut mt = UNINITIALIZED;
+        let mut mt = MT19937_64 {
+            idx: NN,
+            state: [Wrapping(0); NN]
+        };
         for (in_, out) in Iterator::zip(samples.iter(), mt.state.iter_mut()) {
             *out = Wrapping(untemper(*in_));
         }
-        mt.idx = NN;
         mt
     }
 }
@@ -186,16 +209,9 @@ impl Default for MT19937_64 {
     }
 }
 
-impl Rand for MT19937_64 {
-    #[inline]
-    fn rand<R: Rng>(rng: &mut R) -> Self {
-        SeedableRng::from_seed(rng.gen::<u64>())
-    }
-}
-
 #[test]
 fn test_64bit_seeded() {
-    let mt: MT19937_64 = SeedableRng::from_seed(0x123456789abcdefu64);
+    let mt = MT19937_64::from_seed_u64(0x123456789abcdefu64);
     for (&Wrapping(x), &y) in mt.state.iter().zip(STATE_SEEDED_BY_U64.iter()) {
         assert!(x == y);
     }
@@ -203,8 +219,8 @@ fn test_64bit_seeded() {
 
 #[test]
 fn test_64bit_slice_seeded() {
-    let mt: MT19937_64 = SeedableRng::from_seed(&[0x12345u64, 0x23456u64,
-                                                  0x34567u64, 0x45678u64][..]);
+    let mt = MT19937_64::from_seed_slice(&[0x12345u64, 0x23456u64,
+                                           0x34567u64, 0x45678u64][..]);
     for (&Wrapping(x), &y) in mt.state.iter().zip(STATE_SEEDED_BY_SLICE.iter()) {
         assert!(x == y);
     }
@@ -212,8 +228,8 @@ fn test_64bit_slice_seeded() {
 
 #[test]
 fn test_64bit_output() {
-    let mut mt: MT19937_64 = SeedableRng::from_seed(&[0x12345u64, 0x23456u64,
-                                                      0x34567u64, 0x45678u64][..]);
+    let mut mt = MT19937_64::from_seed_slice(&[0x12345u64, 0x23456u64,
+                                               0x34567u64, 0x45678u64][..]);
     for x in TEST_OUTPUT.iter() {
         assert!(mt.next_u64() == *x);
     }
@@ -773,37 +789,27 @@ static TEST_OUTPUT: [u64; 1000] = [
 
 #[test]
 fn test_untemper() {
-    let x = ::rand::thread_rng().gen::<u64>();
+    let x: u64 = thread_rng().gen();
     assert_eq!(x, untemper(temper(x)));
 }
 
 #[test]
 fn test_recovery() {
-    let seed = ::rand::thread_rng().gen::<u64>();
-    let mut orig_mt: MT19937_64 = SeedableRng::from_seed(seed);
+    let seed: u64 = thread_rng().gen();
+    let mut orig_mt = MT19937_64::from_seed_u64(seed);
     // skip some samples so the RNG is in an intermediate state
-    let to_skip = ::rand::thread_rng().gen_range(1, NN);
+    let to_skip = thread_rng().gen_range(1, NN);
     for _ in 0..to_skip {
         orig_mt.next_u64();
     }
-    let samples = orig_mt.gen_iter::<u64>().take(NN).collect::<Vec<_>>();
+    let mut samples = [0u64; NN];
+    for i in samples.iter_mut() { *i = orig_mt.next_u64(); };
     let mut recovered_mt = MT19937_64::recover(&samples[..]);
     for _ in 0..NN*2 {
         assert!(orig_mt.next_u64() == recovered_mt.next_u64());
     }
 }
 
-
-// Note: At the time I'm writing this, the `derive` attribute does not
-// work for large-ish arrays, so these traits below that are usually
-// derived must be manually implemented.
-
-impl Clone for MT19937_64 {
-    #[inline(always)]
-    fn clone(&self) -> MT19937_64 {
-        *self
-    }
-}
 
 impl Debug for MT19937_64 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

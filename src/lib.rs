@@ -31,13 +31,11 @@
 //! extern crate mersenne_twister;
 //! extern crate rand;
 //! use mersenne_twister::MersenneTwister;
-//! use rand::{Rng, SeedableRng};
+//! use rand::{Rng, FromEntropy};
 //!
 //! fn main() {
-//!     // Get a seed somehow.
-//!     let seed: u64 = 0x123456789abcdef;
 //!     // Create the default RNG.
-//!     let mut rng: MersenneTwister = SeedableRng::from_seed(seed);
+//!     let mut rng = MersenneTwister::from_entropy();
 //!
 //!     // start grabbing randomness from rng...
 //! }
@@ -62,7 +60,8 @@
 
 #![deny(missing_docs)]
 
-extern crate rand;
+extern crate rand_core;
+#[cfg(test)] extern crate rand;
 
 pub use mt19937::MT19937;
 pub use mt19937_64::MT19937_64;
