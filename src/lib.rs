@@ -59,6 +59,7 @@
 //! is important to you.
 
 #![deny(missing_docs)]
+#![no_std]
 
 extern crate rand_core;
 #[cfg(test)] extern crate rand;

@@ -8,12 +8,12 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::cmp::{max, Ordering};
-use std::default::Default;
-use std::fmt::{self, Debug};
-use std::hash::{Hash, Hasher};
-use std::num::Wrapping;
-use std::slice;
+use core::cmp::{max, Ordering};
+use core::default::Default;
+use core::fmt::{self, Debug};
+use core::hash::{Hash, Hasher};
+use core::num::Wrapping;
+use core::slice;
 
 use rand_core::{RngCore, SeedableRng, impls, le, Error};
 
