@@ -1,12 +1,12 @@
 #![feature(test)]
 extern crate test;
 
-extern crate rand;
+extern crate rand_core;
 extern crate mersenne_twister;
 
 
 mod mt19937 {
-    use rand::Rng;
+    use rand_core::RngCore;
     use mersenne_twister::MT19937;
 
     #[bench]
@@ -29,7 +29,7 @@ mod mt19937 {
 
 
 mod mt19937_64 {
-    use rand::Rng;
+    use rand_core::RngCore;
     use mersenne_twister::MT19937_64;
 
     #[bench]

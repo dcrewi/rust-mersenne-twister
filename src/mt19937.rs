@@ -8,13 +8,16 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::cmp::{max, Ordering};
-use std::default::Default;
-use std::fmt::{self, Debug};
-use std::hash::{Hash, Hasher};
-use std::num::Wrapping;
+use core::cmp::{max, Ordering};
+use core::default::Default;
+use core::fmt::{self, Debug};
+use core::hash::{Hash, Hasher};
+use core::num::Wrapping;
+use core::slice;
 
-use rand::{Rng, SeedableRng, Rand};
+use rand_core::{RngCore, SeedableRng, impls, le, Error};
+
+#[cfg(test)] use rand::{thread_rng, Rng};
 
 const N: usize = 624;
 const M: usize = 397;
@@ -25,87 +28,36 @@ const LOWER_MASK: Wrapping<u32> = Wrapping(0x7fffffff);
 
 /// The 32-bit flavor of the Mersenne Twister pseudorandom number
 /// generator.
-#[derive(Copy)]
+#[derive(Clone)]
 pub struct MT19937 {
     idx: usize,
     state: [Wrapping<u32>; N],
 }
 
-const UNINITIALIZED: MT19937 = MT19937 {
-    idx: 0,
-    state: [Wrapping(0); N]
-};
+impl SeedableRng for MT19937 {
+    type Seed = [u8; 32];
 
-impl SeedableRng<u32> for MT19937 {
-    #[inline]
-    fn from_seed(seed: u32) -> MT19937 {
-        let mut mt = UNINITIALIZED;
-        mt.reseed(seed);
-        mt
+    fn from_seed(seed: Self::Seed) -> Self {
+        let mut seed_u32 = [0u32; N];
+        le::read_u32_into(&seed, &mut seed_u32);
+        MT19937::from_seed_slice(&seed_u32)
     }
 
-    fn reseed(&mut self, seed: u32) {
-        self.idx = N;
-        self.state[0] = Wrapping(seed);
-        for i in 1..N {
-            self.state[i] = Wrapping(1812433253) * (self.state[i-1] ^ (self.state[i-1]>>30)) + Wrapping(i as u32);
+    fn from_rng<R: RngCore>(mut rng: R) -> Result<Self, Error> {
+        // Custom `from_rng` implementation that uses a seed with the same size
+        // as the entire state.
+        let mut seed = [0u32; N];
+        unsafe {
+            let ptr = seed.as_mut_ptr() as *mut u8;
+
+            let slice = slice::from_raw_parts_mut(ptr, N * 4);
+            rng.try_fill_bytes(slice)?;
         }
+        Ok(MT19937::from_seed_slice(&seed))
     }
 }
 
-impl<'a> SeedableRng<&'a [u32]> for MT19937 {
-    #[inline]
-    fn from_seed(seed: &[u32]) -> MT19937 {
-        let mut mt = UNINITIALIZED;
-        mt.reseed(seed);
-        mt
-    }
-
-    fn reseed(&mut self, key: &[u32]) {
-        self.reseed(19650218u32);
-        let mut i = 1;
-        let mut j = 0;
-        for _ in 0 .. max(N, key.len()) {
-            self.state[i] = (self.state[i] ^ ((self.state[i-1] ^ (self.state[i-1]>>30)) * Wrapping(1664525))) + Wrapping(key[j]) + Wrapping(j as u32);
-            i += 1;
-            if i >= N {
-                self.state[0] = self.state[N-1];
-                i = 1;
-            }
-            j += 1;
-            if j >= key.len() {
-                j = 0;
-            }
-        }
-        for _ in 0 .. N-1 {
-            self.state[i] = (self.state[i] ^ ((self.state[i-1] ^ (self.state[i-1]>>30)) * Wrapping(1566083941))) - Wrapping(i as u32);
-            i += 1;
-            if i >= N {
-                self.state[0] = self.state[N-1];
-                i = 1;
-            }
-        }
-        self.state[0] = Wrapping(1 << 31);
-    }
-}
-
-impl SeedableRng<u64> for MT19937 {
-    #[inline]
-    fn from_seed(seed: u64) -> MT19937 {
-        let mut mt = UNINITIALIZED;
-        mt.reseed(seed);
-        mt
-    }
-
-    #[inline]
-    fn reseed(&mut self, seed: u64) {
-        let seeds = [seed as u32,
-                     (seed >> 32) as u32];
-        self.reseed(&seeds[..]);
-    }
-}
-
-impl Rng for MT19937 {
+impl RngCore for MT19937 {
     #[inline]
     fn next_u32(&mut self) -> u32 {
         // Failing this check indicates that, somehow, the structure
@@ -118,6 +70,20 @@ impl Rng for MT19937 {
         self.idx += 1;
         temper(x)
     }
+
+    #[inline]
+    fn next_u64(&mut self) -> u64 {
+        impls::next_u64_via_u32(self)
+    }
+
+    #[inline]
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        impls::fill_bytes_via_next(self, dest)
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+        Ok(self.fill_bytes(dest))
+    }
 }
 
 impl MT19937 {
@@ -125,7 +91,61 @@ impl MT19937 {
     /// the default fixed seed.
     #[inline]
     pub fn new_unseeded() -> MT19937 {
-        SeedableRng::from_seed(5489u32)
+        MT19937::from_seed_u32(5489u32)
+    }
+
+    /// Initialize a new Mersenne Twister random number generator using an `u32`
+    /// as seed.
+    pub fn from_seed_u32(seed: u32) -> MT19937 {
+        let mut mt = MT19937 {
+            idx: N,
+            state: [Wrapping(0); N]
+        };
+        mt.state[0] = Wrapping(seed);
+        for i in 1..N {
+            mt.state[i] = Wrapping(1812433253) * (mt.state[i-1] ^ (mt.state[i-1]>>30)) + Wrapping(i as u32);
+        }
+        mt
+    }
+
+    /// Initialize a new Mersenne Twister random number generator using an `u64`
+    /// as seed. The seed is converted to a `[u32; 2]` slice and used as seed
+    /// for `from_seed_slice`.
+    pub fn from_seed_u64(seed: u64) -> MT19937 {
+        let mut seed_u32 = [0u32; N];
+        seed_u32[0] = seed as u32;
+        seed_u32[1] = (seed >> 32) as u32;
+        MT19937::from_seed_slice(&seed_u32)
+    }
+
+    /// Initialize a new Mersenne Twister random number generator using a slice
+    /// of `u32` values.
+    pub fn from_seed_slice(seed: &[u32]) -> MT19937 {
+        let mut mt = MT19937::from_seed_u32(19650218u32);
+        let mut i = 1;
+        let mut j = 0;
+        for _ in 0 .. max(N, seed.len()) {
+            mt.state[i] = (mt.state[i] ^ ((mt.state[i-1] ^ (mt.state[i-1]>>30)) * Wrapping(1664525))) + Wrapping(seed[j]) + Wrapping(j as u32);
+            i += 1;
+            if i >= N {
+                mt.state[0] = mt.state[N-1];
+                i = 1;
+            }
+            j += 1;
+            if j >= seed.len() {
+                j = 0;
+            }
+        }
+        for _ in 0 .. N-1 {
+            mt.state[i] = (mt.state[i] ^ ((mt.state[i-1] ^ (mt.state[i-1]>>30)) * Wrapping(1566083941))) - Wrapping(i as u32);
+            i += 1;
+            if i >= N {
+                mt.state[0] = mt.state[N-1];
+                i = 1;
+            }
+        }
+        mt.state[0] = Wrapping(1 << 31);
+        mt
     }
 
     fn fill_next_state(&mut self) {
@@ -151,11 +171,13 @@ impl MT19937 {
     /// Panics if the length of the slice is not exactly 624.
     pub fn recover(samples: &[u32]) -> MT19937 {
         assert!(samples.len() == N);
-        let mut mt = UNINITIALIZED;
+        let mut mt = MT19937 {
+            idx: N,
+            state: [Wrapping(0); N]
+        };
         for (in_, out) in Iterator::zip(samples.iter(), mt.state.iter_mut()) {
             *out = Wrapping(untemper(*in_));
         }
-        mt.idx = N;
         mt
     }
 }
@@ -198,16 +220,9 @@ impl Default for MT19937 {
     }
 }
 
-impl Rand for MT19937 {
-    #[inline]
-    fn rand<R: Rng>(rng: &mut R) -> Self {
-        SeedableRng::from_seed(rng.gen::<u64>())
-    }
-}
-
 #[test]
 fn test_32bit_seeded() {
-    let mt: MT19937 = SeedableRng::from_seed(0x12345678u32);
+    let mt = MT19937::from_seed_u32(0x12345678u32);
     for (&Wrapping(x), &y) in mt.state.iter().zip(STATE_SEEDED_BY_U32.iter()) {
         assert!(x == y);
     }
@@ -215,8 +230,8 @@ fn test_32bit_seeded() {
 
 #[test]
 fn test_32bit_slice_seeded() {
-    let mt: MT19937 = SeedableRng::from_seed(&[0x123u32, 0x234u32,
-                                               0x345u32, 0x456u32][..]);
+    let mt = MT19937::from_seed_slice(&[0x123u32, 0x234u32,
+                                        0x345u32, 0x456u32][..]);
     for (&Wrapping(x), &y) in mt.state.iter().zip(STATE_SEEDED_BY_SLICE.iter()) {
         assert!(x == y);
     }
@@ -224,8 +239,8 @@ fn test_32bit_slice_seeded() {
 
 #[test]
 fn test_32bit_output() {
-    let mut mt: MT19937 = SeedableRng::from_seed(&[0x123u32, 0x234u32,
-                                                   0x345u32, 0x456u32][..]);
+    let mut mt = MT19937::from_seed_slice(&[0x123u32, 0x234u32,
+                                            0x345u32, 0x456u32][..]);
     for x in TEST_OUTPUT.iter() {
         assert!(mt.next_u32() == *x);
     }
@@ -693,37 +708,27 @@ static TEST_OUTPUT: [u32; 1000] = [
 
 #[test]
 fn test_untemper() {
-    let x = ::rand::thread_rng().gen::<u32>();
+    let x: u32 = thread_rng().gen();
     assert_eq!(x, untemper(temper(x)));
 }
 
 #[test]
 fn test_recovery() {
-    let seed = ::rand::thread_rng().gen::<u32>();
-    let mut orig_mt: MT19937 = SeedableRng::from_seed(seed);
+    let seed: u32 = thread_rng().gen();
+    let mut orig_mt = MT19937::from_seed_u32(seed);
     // skip some samples so the RNG is in an intermediate state
-    let to_skip = ::rand::thread_rng().gen_range(1, N);
+    let to_skip = thread_rng().gen_range(1, N);
     for _ in 0..to_skip {
         orig_mt.next_u32();
     }
-    let samples = orig_mt.gen_iter::<u32>().take(N).collect::<Vec<_>>();
+    let mut samples = [0u32; N];
+    for i in samples.iter_mut() { *i = orig_mt.next_u32(); };
     let mut recovered_mt = MT19937::recover(&samples[..]);
     for _ in 0..N*2 {
         assert!(orig_mt.next_u32() == recovered_mt.next_u32());
     }
 }
 
-
-// Note: At the time I'm writing this, the `derive` attribute does not
-// work for large-ish arrays, so these traits below that are usually
-// derived must be manually implemented.
-
-impl Clone for MT19937 {
-    #[inline(always)]
-    fn clone(&self) -> MT19937 {
-        *self
-    }
-}
 
 impl Debug for MT19937 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

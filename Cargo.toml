@@ -1,6 +1,6 @@
 [package]
 name = "mersenne_twister"
-version = "1.1.1"
+version = "2.0.0"
 authors = ["David Creswick <dcrewi@gyrae.net>"]
 license = "MIT/Apache-2.0"
 description = "Mersenne Twister pseudorandom number generator"
@@ -8,6 +8,7 @@ repository = "https://github.com/dcrewi/rust-mersenne-twister"
 documentation = "https://docs.rs/mersenne_twister/"
 readme = "README.md"
 keywords = ["random", "rand", "rng", "algorithm", "mersenne"]
+categories = ["algorithms", "no-std"]
 include = [
     "**/*.rs",
     "Cargo.toml",
@@ -17,7 +18,11 @@ include = [
 ]
 
 [dependencies]
-rand = ">=0.3, <0.5"
+rand_core = "0.2"
+
+[dev-dependencies]
+# For easy testing
+rand = "0.5"
 
 [badges]
 travis-ci = { repository = "dcrewi/rust-mersenne-twister" }

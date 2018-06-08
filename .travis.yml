@@ -1,6 +1,6 @@
 language: rust
 rust:
-  - 1.14.0
+  - 1.22.0 # lowest version supported by rand
   - stable
   - beta
   - nightly
