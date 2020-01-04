@@ -37,7 +37,7 @@
 //!     // Get a seed somehow.
 //!     let seed: u64 = 0x123456789abcdef;
 //!     // Create the default RNG.
-//!     let mut rng: MersenneTwister = SeedableRng::from_seed(seed);
+//!     let mut rng: MersenneTwister = SeedableRng::seed_from_u64(seed);
 //!
 //!     // start grabbing randomness from rng...
 //! }
