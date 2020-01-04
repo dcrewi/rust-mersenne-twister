@@ -15,9 +15,11 @@ include = [
     "LICENSE-MIT",
     "README.md",
 ]
+edition = "2018"
 
 [dependencies]
-rand = ">=0.3, <0.5"
+rand_core = ">=0.5"
+rand = {version = ">=0.7", features = ["small_rng"]}
 
 [badges]
 travis-ci = { repository = "dcrewi/rust-mersenne-twister" }
